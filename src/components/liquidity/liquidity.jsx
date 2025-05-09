@@ -40,7 +40,7 @@ export default function Liquidity() {
     } while (cursor);
     return allCoins;
   }
-
+  console.log("hasLPToken", hasLPToken);
   async function getLiquidityRatioTokens() {
     if (!user?.address) return;
 
@@ -181,6 +181,8 @@ export default function Liquidity() {
       tx.pure.u64(suiRaw),
     ]);
 
+    tx.setGasBudget(20_000);
+
     // 6) call Move entry
     tx.moveCall({
       package: PACKAGE_ID,
@@ -212,6 +214,13 @@ export default function Liquidity() {
   const redeemToken = async (coinId, amount) => {
     if (!coinId || !amount) return;
     const tx = new Transaction();
+    console.log(
+      LIQUIDITY_POOL_ID,
+      coinId,
+      amount,
+      LIQUIDITY_TOKEN_VAULT,
+      USER_BALANCE
+    );
     tx.moveCall({
       package: PACKAGE_ID,
       module: "custom_token",
@@ -219,7 +228,7 @@ export default function Liquidity() {
       arguments: [
         tx.object(LIQUIDITY_POOL_ID),
         tx.object(coinId),
-        tx.pure.u64(amount),
+        tx.pure.u64(amount * 10 ** 4),
         tx.object(LIQUIDITY_TOKEN_VAULT),
         tx.object(USER_BALANCE),
       ],
@@ -240,13 +249,13 @@ export default function Liquidity() {
     getLiquidityRatioTokens();
   }, [user?.address]);
 
-  useEffect(() => {
-    const id = setInterval(
-      () => getLiquidityRatioTokens(userLpCoinObjectId, userLpBalance),
-      3000
-    );
-    return () => clearInterval(id);
-  }, [userLpCoinObjectId, userLpBalance]);
+  // useEffect(() => {
+  //   const id = setInterval(
+  //     () => getLiquidityRatioTokens(userLpCoinObjectId, userLpBalance),
+  //     3000
+  //   );
+  //   return () => clearInterval(id);
+  // }, [userLpCoinObjectId, userLpBalance]);
 
   return (
     <>
@@ -303,7 +312,7 @@ export default function Liquidity() {
           {usercoins[0]?.symbol}
         </div>
       </div>
-      {user?.address ? (
+      {!user?.address ? (
         <div className="w-full flex cursor-pointer items-center justify-center gap-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg py-4 rounded-xl transition-colors duration-200 mt-4">
           <Lock />
           connect wallet first!
@@ -318,7 +327,7 @@ export default function Liquidity() {
       )}
 
       <div className="mt-6 min-h-[120px]">
-        {hasLPToken && userLpBalance > 0 ? (
+        {hasLPToken ? (
           <div className="max-w-xs mx-auto bg-white border border-gray-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center space-y-4">
             {/* Header */}
             <div className="flex items-center gap-2 text-lg font-semibold text-gray-800">

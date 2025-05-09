@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { useCurrentAccount, useSuiClient } from "@mysten/dapp-kit";
+import { ChevronDown } from "lucide-react";
 
 export default function Swap() {
-  let suiClient = useSuiClient();
-  const [isPopup, setIsPopup] = useState(false);
-  const [why, setWhy] = useState("");
+  const suiClient = useSuiClient();
+  const user = useCurrentAccount();
+
   const [fromAmount, setFromAmount] = useState("");
   const [toAmount, setToAmount] = useState("");
+  const [totalTo, setTotalTo] = useState(0);
+  const [totalFrom, setTotalfrom] = useState(0);
+  const [fromCurrency, setFromCurrency] = useState("ETH");
+  const [toCurrency, setToCurrency] = useState("USDC");
   const [coins, setCoins] = useState([]);
-  const user = useCurrentAccount();
 
   const PACKAGE_ID =
     "0x89f709658cd8d722ffc35c7c8fbbea2299ddf725737aa34398cc2a434d0bf6e3";
@@ -19,98 +23,151 @@ export default function Swap() {
   const LIQUIDITY_TOKEN_VAULT =
     "0x62cf3230183a3aef3c5ea42b3d5c55d5f9bbaf51874faf721535234d12f3803c";
 
-  useEffect(() => {
-    const fetchCoins = async () => {
-      if (user?.address) {
-        const res = await suiClient.getAllCoins({ owner: user?.address });
-        const metadata = await suiClient.getCoinMetadata({
-          coinType:
-            "0x47b07c98eb2ba318ae08f27e92c97616c4307495df8e73c437874aae81bb8c95::basic_token::BASIC_TOKEN",
-        });
+  const getCoinsSupportedByPool = async () => {
+    if (!user?.address) return;
+    const allCoins = [];
+    let cursor = null;
+    do {
+      const resp = await suiClient.getAllCoins({
+        owner: user.address,
+        cursor,
+        limit: 50,
+      });
+      allCoins.push(...resp.data);
+      cursor = resp.nextCursor || null;
+    } while (cursor);
 
-        console.log(metadata);
-        console.log(res);
-      }
-    };
-    try {
-      fetchCoins();
-    } catch (error) {
-      console.log(error);
+    const {
+      data: {
+        content: { fields },
+      },
+    } = await suiClient.getObject({
+      id: LIQUIDITY_POOL_ID,
+      options: { showContent: true },
+    });
+
+    const supported_coins = [];
+
+    for (const field of Object.values(fields)) {
+      if (!field.type) continue;
+      const coin_type = field.type.split("<")[1]?.split(">")[0];
+      if (!coin_type) continue;
+
+      const { symbol, decimals } = await suiClient.getCoinMetadata({
+        coinType: coin_type,
+      });
+      const matches = allCoins.filter(
+        (c) => c.coinType === coin_type && c.balance !== "0"
+      );
+      const totalRaw = matches.reduce((acc, c) => acc + BigInt(c.balance), 0n);
+
+      const coinsArr = matches.map((c) => ({
+        object_id: c.coinObjectId,
+        balance: c.balance,
+        normalized: Number(c.balance) / 10 ** decimals,
+      }));
+
+      supported_coins.push({
+        symbol,
+        decimals,
+        balance: Number(totalRaw) / 10 ** decimals,
+        rawBalance: totalRaw.toString(),
+        coins: coinsArr,
+      });
     }
+
+    setCoins(supported_coins);
+  };
+
+  useEffect(() => {
+    getCoinsSupportedByPool();
   }, [user?.address]);
+  console.log(coins);
 
   return (
     <>
-      {/* wrap both fields here with vertical gap */}
-      {isPopup && (
-        <>
-          <div
-            onClick={() => setIsPopup(false)}
-            className="absolute left-0 top-0 bg-black opacity-15 w-full h-lvh z-10 "
-          ></div>
-          <div className="bg-white w-lg h-auto absolute z-40 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center p-5 rounded-2xl">
-            <div
-              onClick={() => {
-                setWhy("");
-              }}
-              className="bg-gray-400 w-md rounded-xl shadow-md px-5 py-4 flex justify-between items-center gap-4 cursor-pointer hover:scale-110 transition-all"
-            >
-              <h1 className="text-2xl">Name</h1>
-              <h1 className="text-2xl">Coin</h1>
-            </div>
-          </div>
-        </>
-      )}
       <div className="space-y-4">
         {/* From Field */}
-        <div className="flex gap-5 items-center border border-gray-300 rounded-xl px-4 py-4">
-          <div
-            className="mr-4 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 transition"
-            onClick={() => {
-              setWhy("to");
-              setIsPopup((prev) => !prev);
-              console.log("Change FROM token");
-            }}
-          >
-            ETH
+        <div>
+          <div className="flex gap-5 items-center border border-gray-300 rounded-xl px-4 py-4">
+            <div className="relative inline-block w-32">
+              <select
+                value={fromCurrency}
+                onChange={(e) => {
+                  const symbol = e.target.value;
+                  setFromCurrency(symbol);
+                  const c = coins.find(
+                    (c) => c.symbol.toLowerCase() === symbol
+                  );
+                  setTotalfrom(c ? c.balance : 0);
+                }}
+                className="w-full appearance-none bg-white border border-gray-300 rounded-lg px-3 py-2 pr-8 text-gray-700 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                {coins.map((coin) => (
+                  <option key={coin.symbol} value={coin.symbol.toLowerCase()}>
+                    {coin.symbol}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            </div>
+            <input
+              type="number"
+              placeholder="Enter amount"
+              className="flex-1 outline-none text-right text-xl text-gray-900 placeholder-gray-400 bg-transparent"
+              min="0"
+              value={fromAmount}
+              onChange={(e) => setFromAmount(e.target.value)}
+            />
           </div>
-          <input
-            type="number"
-            placeholder="Enter amount"
-            className="flex-1 outline-none text-right text-xl text-gray-900 placeholder-gray-400 bg-transparent"
-            min="0"
-            value={fromAmount}
-            onChange={(e) => setFromAmount(e.target.value)}
-          />
+          <div className="text-right text-sm text-gray-500 mt-1">
+            Balance: {totalFrom.toFixed(4)} {fromCurrency.toUpperCase()}
+          </div>
         </div>
 
         {/* To Field */}
-        <div className="flex gap-5 items-center border border-gray-300 rounded-xl px-4 py-4">
-          <div
-            className="mr-4 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 transition"
-            onClick={() => {
-              setWhy("from");
-              setIsPopup((prev) => !prev);
-            }}
-          >
-            USDC
+        <div>
+          <div className="flex gap-5 items-center border border-gray-300 rounded-xl px-4 py-4">
+            <div className="relative inline-block w-32">
+              <select
+                value={toCurrency}
+                onChange={(e) => {
+                  const symbol = e.target.value;
+                  setToCurrency(symbol);
+                  const c = coins.find(
+                    (c) => c.symbol.toLowerCase() === symbol
+                  );
+                  setTotalTo(c ? c.balance : 0);
+                }}
+                className="w-full appearance-none bg-white border border-gray-300 rounded-lg px-3 py-2 pr-8 text-gray-700 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                {coins.map((coin) => (
+                  <option key={coin.symbol} value={coin.symbol.toLowerCase()}>
+                    {coin.symbol}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            </div>
+            <input
+              type="number"
+              placeholder="0"
+              className="flex-1 outline-none text-right text-xl text-gray-900 placeholder-gray-400 bg-transparent"
+              min="0"
+              value={toAmount}
+              disabled
+            />
           </div>
-          <input
-            type="number"
-            placeholder="Enter amount"
-            className="flex-1 outline-none text-right text-xl text-gray-900 placeholder-gray-400 bg-transparent"
-            min="0"
-            value={toAmount}
-            disabled
-            onChange={(e) => setToAmount(e.target.value)}
-          />
+          <div className="text-right text-sm text-gray-500 mt-1">
+            Balance: {totalTo.toFixed(4)} {toCurrency.toUpperCase()}
+          </div>
         </div>
       </div>
 
       {/* Info Section */}
       <div className="flex justify-between text-sm text-gray-600 mt-4">
         <span>Slippage: 0.5%</span>
-        <span>Min received: 0 USDC</span>
+        <span>Min received: 0 {toCurrency.toUpperCase()}</span>
       </div>
 
       {/* Swap Button */}
