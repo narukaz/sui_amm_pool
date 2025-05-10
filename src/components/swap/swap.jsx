@@ -4,7 +4,7 @@ import {
   useSignTransaction,
   useSuiClient,
 } from "@mysten/dapp-kit";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2, Lock } from "lucide-react";
 import { Transaction } from "@mysten/sui/transactions";
 
 export default function Swap() {
