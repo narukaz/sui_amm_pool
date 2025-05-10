@@ -326,14 +326,21 @@ export default function Swap() {
       </div>
 
       {/* Swap Button */}
-      <button
-        onClick={() => {
-          swapTokens(fromAmount, fromObject, toObject);
-        }}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg py-4 rounded-xl transition-colors duration-200 mt-4"
-      >
-        Confirm Swap
-      </button>
+      {!user?.address ? (
+        <div className="w-full flex cursor-pointer items-center justify-center gap-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg py-4 rounded-xl transition-colors duration-200 mt-4">
+          <Lock />
+          connect wallet first!
+        </div>
+      ) : (
+        <button
+          onClick={() => {
+            swapTokens(fromAmount, fromObject, toObject);
+          }}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg py-4 rounded-xl transition-colors duration-200 mt-4"
+        >
+          Confirm Swap
+        </button>
+      )}
     </>
   );
 }

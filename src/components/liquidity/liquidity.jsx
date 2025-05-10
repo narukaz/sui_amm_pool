@@ -247,13 +247,13 @@ export default function Liquidity() {
     getLiquidityRatioTokens();
   }, [user?.address]);
 
-  // useEffect(() => {
-  //   const id = setInterval(
-  //     () => getLiquidityRatioTokens(userLpCoinObjectId, userLpBalance),
-  //     3000
-  //   );
-  //   return () => clearInterval(id);
-  // }, [userLpCoinObjectId, userLpBalance]);
+  useEffect(() => {
+    const id = setInterval(
+      () => getLiquidityRatioTokens(userLpCoinObjectId, userLpBalance),
+      5000
+    );
+    return () => clearInterval(id);
+  }, [userLpCoinObjectId, userLpBalance]);
 
   return (
     <>
@@ -311,7 +311,7 @@ export default function Liquidity() {
         </div>
       </div>
       {!user?.address ? (
-        <div className="w-full flex cursor-pointer items-center justify-center gap-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg py-4 rounded-xl transition-colors duration-200 mt-4">
+        <div className="w-full flex items-center justify-center gap-4 bg-gray-600 hover:bg-gray-700 text-white font-semibold text-lg py-4 rounded-xl transition-colors duration-200 mt-4 cursor-not-allowed">
           <Lock />
           connect wallet first!
         </div>
@@ -344,7 +344,7 @@ export default function Liquidity() {
             {/* Redeem Button */}
             <button
               onClick={() => redeemToken(userLpCoinObjectId, userLpBalance)}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-2xl transition-colors duration-200"
+              className="w-full cursor-pointer bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-2xl transition-colors duration-200"
             >
               Redeem
             </button>

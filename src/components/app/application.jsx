@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
-
+import { ConnectModal } from "@mysten/dapp-kit";
 import { ConnectButton, useCurrentAccount } from "@mysten/dapp-kit";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
