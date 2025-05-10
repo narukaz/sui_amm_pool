@@ -22,13 +22,13 @@ export default function Liquidity() {
   console.log("user LP TOKEN balanve", userLpBalance);
 
   const PACKAGE_ID =
-    "0x89f709658cd8d722ffc35c7c8fbbea2299ddf725737aa34398cc2a434d0bf6e3";
+    "0xe1a3a986f41ed1d241949475723c745684b2222d3ef0aa44e9c18adb2f47b303";
   const USER_BALANCE =
-    "0x5a4a0c4ea7df8e2b39d277b109d123462d61bfa559274aa594de4e6873b27636";
+    "0x2999e99e39b4ed68a1e12b1f2b17c73823c688a6c0d4a9640e2d085f84445f80";
   const LIQUIDITY_POOL_ID =
-    "0x3556579d5902eb931ce992e9f5a7d2f55a3dd3dc8c45746247ebbc43f4058358";
+    "0x5bbae60ee0a44e9dd282a7efd79a811dac52dede6d8b72c69a625f3e9cca6dc1";
   const LIQUIDITY_TOKEN_VAULT =
-    "0x62cf3230183a3aef3c5ea42b3d5c55d5f9bbaf51874faf721535234d12f3803c";
+    "0xdd54d5a2e2d9c2ae1667c527684239ac1b88562bfd70fbf88274a93df63af85c";
 
   async function fetchAllCoins(owner) {
     const allCoins = [];
@@ -71,7 +71,10 @@ export default function Liquidity() {
     console.log(coinsInWallet);
     const newCoinData = [];
     for (let i = 0; i < coinsInWallet.length; i++) {
-      if (lp_match_type == coinsInWallet[i].coinType) {
+      if (
+        lp_match_type == coinsInWallet[i].coinType &&
+        coinsInWallet[i].balance > 0
+      ) {
         let metadata = await suiClient.getCoinMetadata({
           coinType: lp_match_type,
         });
@@ -118,7 +121,6 @@ export default function Liquidity() {
 
     setUsercoins(newCoinData);
   }
-
   const addLiquidity = async () => {
     if (usercoins.length < 2) return;
     const [tokenEntry, suiEntry] = usercoins;
@@ -137,51 +139,42 @@ export default function Liquidity() {
     const tokenIds = tokenEntry.coinIds.map((ci) => ci.objectId);
     const suiIds = suiEntry.coinIds.map((ci) => ci.objectId);
 
-    // ── RESERVE ONE SUI UTXO FOR GAS ──
-    // take the *first* coin as our gasCoin, and only operate on the others
-    const [gasSuiId, ...suiForPoolIds] = suiIds;
-
-    // decide merging
-    const shouldMergeTok = tokenIds.length > 1;
-    const shouldMergeSui = suiForPoolIds.length > 1;
+    // ── RESERVE LAST SUI UTXO FOR GAS ──
+    const reserveForGas = suiIds[suiIds.length - 1];
+    const suiForPoolIds = suiIds.slice(0, -1);
 
     const tx = new Transaction();
 
     // 3) merge extra custom-token coins
-    if (shouldMergeTok) {
-      const [mainTokenId, ...extraTokenIds] = tokenIds;
-      extraTokenIds.forEach((id) =>
-        tx.mergeCoins(tx.object(mainTokenId), [tx.object(id)])
-      );
+    let mainTokenId = tokenIds[0];
+    if (tokenIds.length > 1) {
+      const [primary, ...rest] = tokenIds;
+      mainTokenId = primary;
+      rest.forEach((id) => {
+        tx.mergeCoins(tx.object(primary), [tx.object(id)]);
+      });
     }
-    const [mainTokenId] = tokenIds;
 
-    // 4) merge extra SUI *only* from suiForPoolIds
-    let mainSuiId;
-    if (shouldMergeSui) {
-      // properly declare extraSuiIds here
-      const [m, ...extraSuiIds] = suiForPoolIds;
-      mainSuiId = m;
-      extraSuiIds.forEach((id) =>
-        tx.mergeCoins(tx.object(mainSuiId), [tx.object(id)])
-      );
-    } else {
-      // only one UTXO to use
-      [mainSuiId] = suiForPoolIds;
+    // 4) merge extra SUI coins for pool (excluding the reserved-for-gas)
+    let mainSuiId = suiForPoolIds[0];
+    if (suiForPoolIds.length > 1) {
+      const [primary, ...rest] = suiForPoolIds;
+      mainSuiId = primary;
+      rest.forEach((id) => {
+        tx.mergeCoins(tx.object(primary), [tx.object(id)]);
+      });
     }
 
     // 5) split off exactly what you want to add
     const tokenRaw = BigInt(tokenAmount) * BigInt(10 ** tokenEntry.decimals);
     const suiRaw = BigInt(suiAmount) * BigInt(10 ** suiEntry.decimals);
 
-    const [tokToAdd] = tx.splitCoins(tx.object(mainTokenId), [
+    const [tokenCoinToAdd] = tx.splitCoins(tx.object(mainTokenId), [
       tx.pure.u64(tokenRaw),
     ]);
-    const [suiToAdd] = tx.splitCoins(tx.object(mainSuiId), [
+    const [suiCoinToAdd] = tx.splitCoins(tx.object(mainSuiId), [
       tx.pure.u64(suiRaw),
     ]);
-
-    tx.setGasBudget(20_000);
 
     // 6) call Move entry
     tx.moveCall({
@@ -189,18 +182,20 @@ export default function Liquidity() {
       module: "custom_token",
       function: "add_liquidity_to_the_pool",
       arguments: [
-        tx.object(LIQUIDITY_POOL_ID), // &mut LiquidityPool
-        suiToAdd, // mut Coin<SUI>
-        tokToAdd, // mut Coin<CUSTOM_TOKEN>
-        tx.pure.u64(suiRaw), // u64 sui_amount
-        tx.object(LIQUIDITY_TOKEN_VAULT), // &mut LiquidityTokenVault
-        tx.object(USER_BALANCE), // &mut UserVaultLedger
+        tx.object(LIQUIDITY_POOL_ID),
+        suiCoinToAdd,
+        tokenCoinToAdd,
+        tx.pure.u64(suiRaw),
+        tx.object(LIQUIDITY_TOKEN_VAULT),
+        tx.object(USER_BALANCE),
       ],
     });
 
+    // 7) set gas budget – SDK will auto-select the reserved coin
+    // tx.setGasBudget(1_000_000);
     tx.setSender(user.address);
 
-    // 7) sign & execute
+    // 8) sign & execute
     const { bytes, signature } = await signTransaction({
       transaction: tx,
       chain: "sui:testnet",
@@ -209,6 +204,9 @@ export default function Liquidity() {
       transactionBlock: bytes,
       signature,
     });
+
+    // 9) refresh balances / LP tokens
+    getLiquidityRatioTokens();
   };
 
   const redeemToken = async (coinId, amount) => {
